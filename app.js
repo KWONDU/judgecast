@@ -339,17 +339,18 @@ function fitBank() {
 function markCells(ids, cls, on) { for (const id of ids) { const c = chart.cells[id]; if (c) c.classList.toggle(cls, on); } }
 
 // ---------------------------------------------------------------- stage rail + status
-const VIEW_OF = { base: "forecast", retrieve: "memory", judge: "covariates", adjust: "forecast", observe: "forecast", construct: "forecast", store: "memory" };
+// phones: the visualization shown follows whatever is outlined
+const VIEW_BY_SEL = { ".chart-card": "forecast", ".cov-card": "covariates", ".bank-card": "memory", ".right": "forecast" };
 function setView(v) {
   $(".left").dataset.view = v;
   document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   if (v === "memory") fitBank();
 }
-// PC: outline what the current step is acting on, in the step's role colour. Adjustment moves the outline between the
-// memory (matched cases) and the chart (the correction); construction happens in the trace, so the trace is outlined.
-const FOCUS_OF = { base: [".chart-card", "base"], retrieve: [".bank-card", "memory"], judge: [".cov-card", "judgment"],
-  adjust: [".chart-card", "adjustment"], observe: [".chart-card", "feedback"], construct: [".right", "feedback"],
-  store: [".bank-card", "memory"] };
+// Outline what the current step is acting on, in that thing's role colour. Judgment and adjustment each read memory
+// first (purple, the memory is always purple) and then act (judgment on the covariates, adjustment on the chart);
+// construction happens in the trace, so the trace is outlined.
+const FOCUS_OF = { base: [".chart-card", "base"], judge: [".bank-card", "memory"], adjust: [".chart-card", "adjustment"],
+  observe: [".chart-card", "feedback"], construct: [".right", "feedback"], store: [".bank-card", "memory"] };
 function focusAdd(sel, role) {
   const c = $(sel);
   c.style.setProperty("--fc", `var(--${role})`); c.style.setProperty("--fct", `var(--${role}-tint2)`);
@@ -358,10 +359,10 @@ function focusAdd(sel, role) {
 function focusOn(sel, role) {
   document.querySelectorAll(".focus").forEach(c => c.classList.remove("focus"));
   if (sel) focusAdd(sel, role);
+  if (sel && narrow() && VIEW_BY_SEL[sel]) setView(VIEW_BY_SEL[sel]);
 }
 function focusCard(name) { const f = FOCUS_OF[name]; focusOn(f && f[0], f && f[1]); }
 function stage(name) {
-  if (narrow() && VIEW_OF[name]) setView(VIEW_OF[name]);
   focusCard(name);
   let seen = false;
   for (const li of $("#rail").children) {
@@ -389,10 +390,13 @@ async function run() {
   st.done("");
   await sleep(450);
 
-  // 2. retrieval
-  stage("retrieve");
-  st = step("memory", "Retrieve relevant experience", `k = ${S.models.k}`,
-    `Nearest validated experiences by departure distance of the covariates and the base forecast, among ${S.bank.length} formed on earlier windows.`);
+  // 2. covariate-wise judgment: read relevant experience from memory, then judge
+  stage("judge");
+  const jText = S.rationales.map(r => r.rationale).join(" ");
+  st = step("judgment", "Covariate-wise judgment", `${S.models.llm} · judge`,
+    `Input: the current window (target context, base forecast, ${cov} known-future covariate${cov > 1 ? "s" : ""}) and relevant experience from memory.`);
+  el("div", { class: "subh mem" }, st.body, `Relevant experience · k = ${S.models.k} nearest by departure distance, among ${S.bank.length} in memory`);
+  follow();
   await sleep(600);
   for (const r of S.retrieved) {
     const row = el("div", { class: "exp" }, st.body);
@@ -405,14 +409,9 @@ async function run() {
     follow();
     await sleep(380);
   }
-  st.done("");
   await sleep(500);
-
-  // 3. covariate-wise judgment
-  stage("judge");
-  const jText = S.rationales.map(r => r.rationale).join(" ");
-  st = step("judgment", "Covariate-wise judgment", `${S.models.llm} · judge`,
-    `Input: the current window (target context, base forecast, ${cov} known-future covariate${cov > 1 ? "s" : ""}) and the ${S.retrieved.length} retrieved experiences.`);
+  focusOn(".cov-card", "judgment");
+  el("div", { class: "subh jud" }, st.body, "Judgment");
   const thinkMs = 1600, jCps = 120;
   let stop = callClock(st, sec.judgment || 20, thinkMs + streamMs(jText, jCps) + 900);
   await reasoning(st.body, "Reasoning over covariate evidence", thinkMs);
@@ -448,7 +447,7 @@ async function run() {
     const blk = el("div", { class: "block" }, st.body);
     el("div", { class: "bh", html: `<span class="chip adj">${patternLabel(a.pattern)}</span><span class="muted">steps ${ranges(a.timestamps)}</span>` }, blk);
     if (a.cases && a.cases.length) {
-      focusOn(".bank-card", "adjustment");
+      focusOn(".bank-card", "memory");            // memory is always purple, whichever step reads it
       el("div", { class: "muted", style: "margin:2px 0 4px" }, blk, `${a.cases.length} matched cases from memory`);
       const cs = el("div", { class: "cases" }, blk);
       for (const c of a.cases) {
