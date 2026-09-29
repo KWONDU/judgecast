@@ -233,7 +233,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
 .views { display: none; }
 
 /* header switch between the recorded samples */
-.samples { display: flex; align-items: center; align-self: center; gap: 3px; background: #eef0f3; border-radius: 12px; padding: 3px; margin: 0 16px; }
+.samples { display: flex; align-items: stretch; align-self: center; gap: 3px; background: #eef0f3; border-radius: 12px; padding: 3px; margin: 0 16px; }
 .samples button { display: flex; flex-direction: column; justify-content: center; height: auto; line-height: 1.3;
   border: 0; background: transparent; text-align: left; padding: 5px 14px; border-radius: 9px; cursor: pointer;
   font-family: var(--sans); color: var(--ink2); transition: background .2s, box-shadow .2s; }
@@ -274,7 +274,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
   body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .top { height: auto; flex: none; padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
   .samples { order: 3; width: 100%; margin: 0; }
-  .samples button { flex: 1; padding: 5px 8px; text-align: center; }
+  .samples button { flex: 1; padding: 5px 8px; text-align: center; align-items: center; }
   .samples .smp-t { font-size: 12px; white-space: normal; }
   .brand { gap: 9px; }
   .brand .mark { width: 28px; height: 28px; }
