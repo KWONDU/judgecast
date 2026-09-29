@@ -146,11 +146,19 @@ let COVH = 92;
 const CM = { t: 8, b: 8 };
 let X, Y, NCTX, HOR, chart = {};
 
-function scales() {
+const narrow = () => window.matchMedia("(max-width: 999px)").matches;
+function scales(chOverride) {
   // draw at the container's pixel size so type stays at its set size on any screen
-  CW = Math.max(640, Math.round($(".chart-wrap").clientWidth - 16));
-  CH = Math.round(Math.min(380, Math.max(250, window.innerHeight * 0.34)));
-  COVH = window.innerHeight < 1000 ? 70 : 92;
+  CW = Math.max(300, Math.round($(".left").clientWidth - 18));
+  if (narrow()) {
+    CH = Math.round(Math.min(330, Math.max(190, window.innerHeight * 0.27)));
+    COVH = Math.round(CH * 0.5);
+    document.documentElement.style.setProperty("--bankh", `${CH + 24}px`);
+  } else {
+    CH = Math.round(Math.min(380, Math.max(200, window.innerHeight * 0.34 - (window.innerHeight < 1000 ? 50 : 0))));
+    COVH = window.innerHeight < 850 ? 58 : window.innerHeight < 1000 ? 66 : 92;
+  }
+  if (chOverride) CH = chOverride;
   NCTX = S.context.values.length; HOR = S.y_base.length;
   const n = NCTX + HOR;
   X = i => M.l + (i * (CW - M.l - M.r)) / (n - 1);
@@ -208,8 +216,9 @@ function drawChart() {
   });
   sv("line", { x1: x0, x2: x0, y1: M.t - 6, y2: CH - M.b, stroke: "#16181d", "stroke-width": 1.2, "stroke-dasharray": "3 3" }, g);
   sv("text", { x: x0 - 8, y: M.t + 8, "text-anchor": "end", "font-size": 12, "font-weight": 600, fill: "#16181d" }, g, "Forecast origin");
-  sv("text", { x: x1 - 8, y: M.t + 8, "text-anchor": "end", "font-size": 12, "font-weight": 600, fill: "#8a909b" }, g, `Forecast horizon · ${HOR} steps`);
-  chart.unknown = sv("text", { x: (x0 + x1) / 2, y: (CH - M.b + M.t) / 2 + 30, "text-anchor": "middle", "font-size": 13, fill: "#b8bec8", "font-style": "italic" }, g, "future not yet observed");
+  const roomy = x1 - x0 > 230;          // the horizon band is too narrow for its labels on phones
+  if (roomy) sv("text", { x: x1 - 8, y: M.t + 8, "text-anchor": "end", "font-size": 12, "font-weight": 600, fill: "#8a909b" }, g, `Forecast horizon · ${HOR} steps`);
+  chart.unknown = sv("text", { x: (x0 + x1) / 2, y: (CH - M.b + M.t) / 2 + 30, "text-anchor": "middle", "font-size": 13, fill: "#b8bec8", "font-style": "italic", opacity: roomy ? 1 : 0 }, g, "future not yet observed");
 
   // history
   const hist = S.context.values.map((v, i) => [X(i), Y(v)]);
@@ -230,8 +239,10 @@ function drawChart() {
   // hover layer
   chart.cross = sv("line", { y1: M.t, y2: CH - M.b, stroke: "#16181d", "stroke-width": 1, opacity: 0 }, g);
   const hit = sv("rect", { x: M.l, y: M.t, width: CW - M.l - M.r, height: CH - M.t - M.b, fill: "transparent" }, g);
-  hit.addEventListener("mousemove", onHover);
-  hit.addEventListener("mouseleave", () => { $("#tip").hidden = true; chart.cross.setAttribute("opacity", 0); });
+  hit.style.touchAction = "none";
+  hit.addEventListener("pointermove", onHover);
+  hit.addEventListener("pointerdown", onHover);
+  hit.addEventListener("pointerleave", () => { $("#tip").hidden = true; chart.cross.setAttribute("opacity", 0); });
 }
 
 const shown = { base: false, jc: false, obs: false, bl: false };
@@ -277,7 +288,7 @@ function drawCovariates() {
     const pts = vals.map((v, i) => [X(i), cy(v)]);
     sv("path", { d: pathD(pts.slice(0, NCTX)), fill: "none", stroke: color, "stroke-width": 1.8 }, svg);
     sv("path", { d: pathD(pts.slice(NCTX - 1)), fill: "none", stroke: color, "stroke-width": 2.6 }, svg);
-    const lab = sv("g", {}, svg);
+    const lab = sv("g", { stroke: "#fff", "stroke-width": 4, "stroke-linejoin": "round", "paint-order": "stroke" }, svg);
     const t1 = sv("text", { x: 8, y: 20, "font-size": 12.5, "font-weight": 600, fill: "#16181d" }, lab, c.label);
     sv("text", { x: 8, y: 36, "font-size": 11, fill: "#8a909b", "font-family": "var(--mono)" }, lab, c.name);
     if (COVH >= 90) sv("text", { x: 8, y: 52, "font-size": 11, fill: "#8a909b" }, lab, "known future");
@@ -310,10 +321,32 @@ function drawBank() {
   for (const e of [...S.bank].reverse()) chart.cells[e.id] = el("div", { class: "cell", title: `${fmtDate(e.origin_time)} · ${e.source}` }, b);
   $("#bank-n").textContent = S.bank.length;
 }
+// size the cells so the whole memory fits the box it is given (one extra slot for the experience this window stores)
+function fitBank() {
+  const b = $("#bank"); if (!b || !b.clientHeight) return;
+  const cs = getComputedStyle(b);
+  const W = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = b.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const n = S.bank.length + 1;
+  let cell = 3, gap = 2;
+  for (let c = 16; c >= 3; c -= 0.5) {
+    const g = Math.max(2, Math.round(c * 0.27));
+    const cols = Math.floor((W + g) / (c + g));
+    if (cols > 0 && Math.ceil(n / cols) * (c + g) - g <= H) { cell = c; gap = g; break; }
+  }
+  b.style.setProperty("--cell", `${cell}px`); b.style.setProperty("--gap", `${gap}px`);
+}
 function markCells(ids, cls, on) { for (const id of ids) { const c = chart.cells[id]; if (c) c.classList.toggle(cls, on); } }
 
 // ---------------------------------------------------------------- stage rail + status
+const VIEW_OF = { base: "forecast", retrieve: "memory", judge: "covariates", adjust: "forecast", observe: "forecast", construct: "forecast", store: "memory" };
+function setView(v) {
+  $(".left").dataset.view = v;
+  document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  if (v === "memory") fitBank();
+}
 function stage(name) {
+  if (narrow() && VIEW_OF[name]) setView(VIEW_OF[name]);
   let seen = false;
   for (const li of $("#rail").children) {
     if (li.dataset.stage === name) { li.className = "on"; seen = true; }
@@ -461,7 +494,7 @@ async function run() {
   $("#sc-base").textContent = num(S.mse.base); $("#sc-jc").textContent = num(S.mse.judgecast);
   if (S.baselines && S.baselines.length) { $("#sc-bl").textContent = num(S.baselines[0].mse); $("#sc-bl-box").hidden = false; }
   $("#sc-delta").textContent = `${sgn(((S.mse.judgecast - S.mse.base) / S.mse.base) * 100, 1)}%`;
-  const sb = $("#scoreboard"); sb.hidden = false;
+  $("#scoreboard").style.visibility = "visible";
   st.done("");
   follow();
   await sleep(1400);
@@ -571,13 +604,23 @@ function reset() {
   gen++; seed = 7; started = false; paused = true;
   shown.base = shown.jc = shown.obs = shown.bl = false; jcNow = null;
   $("#trace").innerHTML = "";
-  $("#scoreboard").hidden = true; $("#sc-bl-box").hidden = true;
+  $("#scoreboard").hidden = false; $("#scoreboard").style.visibility = "hidden";   // space held from the start: no jump when it appears
+  for (const id of ["#sc-base", "#sc-bl", "#sc-jc", "#sc-delta"]) $(id).textContent = "–";
   for (const k of ["obs", "base", "bl", "jc", "res", "cand"]) $(`.lg[data-k="${k}"]`).classList.add("off");
   for (const li of $("#rail").children) li.className = "";
   status("", "Ready");
   clock("Forecast origin", parseT(S.future_times[0]));
   drawChart(); drawCovariates(); drawBank();
-  const hint = el("div", { class: "endline", style: "margin-top:40%" }, trace(), "Press Space to run this window");
+  // two columns: if the left column would overflow, give the excess back from the chart so memory stays in view
+  if (!narrow()) requestAnimationFrame(() => {
+    const L = $(".left"), over = L.scrollHeight - L.clientHeight;
+    if (over > 2 && CH > 180 && !started) { scales(Math.max(180, CH - over)); drawChart(); drawCovariates(); }
+  });
+  setView("forecast");
+  requestAnimationFrame(fitBank);
+  const touch = window.matchMedia("(pointer: coarse)").matches;
+  const hint = el("div", { class: "endline", style: "margin-top:30%;cursor:pointer" }, trace(), touch ? "Tap ▶ to run this window" : "Press Space to run this window");
+  hint.onclick = () => play();
   hint.id = "hint";
   $("#btn-play").textContent = "▶";
 }
@@ -601,7 +644,7 @@ async function init() {
   if (S.error) { document.body.textContent = S.error; return; }
   document.title = `JudgeCast · ${S.dataset.dataset}`;
   $("#m-tsfm").textContent = S.models.tsfm;
-  if (S.baselines && S.baselines.length) { $("#lg-bl-t").textContent = S.baselines[0].label; $("#lg-bl").hidden = false; $("#sc-bl-k").textContent = `${S.baselines[0].label.replace(" + covariates", " +cov")} MSE`; }
+  if (S.baselines && S.baselines.length) { $("#lg-bl-t").textContent = S.baselines[0].label; $("#lg-bl").hidden = false; $("#sc-bl-box").hidden = false; $("#sc-bl-k").textContent = `${S.baselines[0].label.replace(" + covariates", " +cov")} MSE`; }
   $("#m-llm").textContent = `${S.models.llm}${S.models.effort ? " · " + S.models.effort : ""}`;
   $("#target-title").textContent = `${S.dataset.dataset} · ${S.dataset.label}`;
   $("#target-sub").textContent = `${S.dataset.unit} · hourly · forecast origin ${fmtClock(parseT(S.future_times[0]))} · ${S.split === "train" ? "memory is being built" : "memory fixed"}`;
@@ -617,7 +660,9 @@ async function init() {
     else if (e.key === "h" || e.key === "H") $("#controls").classList.toggle("hide");
     else if (["1", "2", "4"].includes(e.key)) setSpeed(+e.key);
   });
-  window.addEventListener("resize", () => { if (!started) { scales(); reset(); } });
+  document.querySelectorAll("#views button").forEach(b => (b.onclick = () => setView(b.dataset.v)));
+  if (window.ResizeObserver) new ResizeObserver(() => fitBank()).observe($("#bank"));
+  window.addEventListener("resize", () => { if (!started) { scales(); reset(); } else fitBank(); });
   const q = new URLSearchParams(location.search);
   if (q.get("speed")) setSpeed(+q.get("speed"));
   if (q.has("clean")) $("#controls").classList.add("hide");

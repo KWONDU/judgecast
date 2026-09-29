@@ -29,16 +29,21 @@
 </header>
 
 <main class="grid">
-  <section class="left">
+  <section class="left" data-view="forecast">
     <ol class="rail" id="rail">
-      <li data-stage="base"><span class="n">1</span>Base forecast</li>
-      <li data-stage="retrieve"><span class="n">2</span>Retrieval</li>
-      <li data-stage="judge"><span class="n">3</span>Judgment</li>
-      <li data-stage="adjust"><span class="n">4</span>Adjustment</li>
-      <li data-stage="observe"><span class="n">5</span>Observation</li>
-      <li data-stage="construct"><span class="n">6</span>Construction</li>
-      <li data-stage="store"><span class="n">7</span>Memory update</li>
+      <li data-stage="base"><span class="n">1</span><span class="t">Base forecast</span></li>
+      <li data-stage="retrieve"><span class="n">2</span><span class="t">Retrieval</span></li>
+      <li data-stage="judge"><span class="n">3</span><span class="t">Judgment</span></li>
+      <li data-stage="adjust"><span class="n">4</span><span class="t">Adjustment</span></li>
+      <li data-stage="observe"><span class="n">5</span><span class="t">Observation</span></li>
+      <li data-stage="construct"><span class="n">6</span><span class="t">Construction</span></li>
+      <li data-stage="store"><span class="n">7</span><span class="t">Memory update</span></li>
     </ol>
+    <div class="views" id="views">
+      <button data-v="forecast" class="on">Forecast</button>
+      <button data-v="covariates">Covariates</button>
+      <button data-v="memory">Memory</button>
+    </div>
 
     <div class="card chart-card">
       <div class="card-head">
