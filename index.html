@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JudgeCast</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-scene="scene.json">
+<header class="top">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="1" y="1" width="30" height="30" rx="8" fill="var(--judgment)"/>
+      <path d="M6 20 L11 15 L15 18 L20 10 L26 13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="26" cy="13" r="2.6" fill="#fff"/>
+    </svg>
+    <div>
+      <div class="name">JudgeCast</div>
+      <div class="tag">Time series forecasting with experience-informed covariate judgments</div>
+    </div>
+  </div>
+  <div class="top-right">
+    <div class="clock"><span class="clock-label" id="clock-label">Forecast origin</span><span class="clock-time" id="clock-time">–</span></div>
+    <div class="badge"><span class="b-k">Frozen TSFM</span><span class="b-v" id="m-tsfm">–</span></div>
+    <div class="badge"><span class="b-k">Frozen LLM</span><span class="b-v" id="m-llm">–</span></div>
+    <div class="status" id="status"><span class="s-dot"></span><span id="status-text">Ready</span></div>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="left">
+    <ol class="rail" id="rail">
+      <li data-stage="base"><span class="n">1</span>Base forecast</li>
+      <li data-stage="retrieve"><span class="n">2</span>Retrieval</li>
+      <li data-stage="judge"><span class="n">3</span>Judgment</li>
+      <li data-stage="adjust"><span class="n">4</span>Adjustment</li>
+      <li data-stage="observe"><span class="n">5</span>Observation</li>
+      <li data-stage="construct"><span class="n">6</span>Construction</li>
+      <li data-stage="store"><span class="n">7</span>Memory update</li>
+    </ol>
+
+    <div class="card chart-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title" id="target-title">–</div>
+          <div class="card-sub" id="target-sub">–</div>
+        </div>
+        <div class="scoreboard" id="scoreboard" hidden>
+          <div class="score"><span class="sc-k">Base MSE</span><span class="sc-v" id="sc-base">–</span></div>
+          <div class="score bl" id="sc-bl-box" hidden><span class="sc-k" id="sc-bl-k">–</span><span class="sc-v" id="sc-bl">–</span></div>
+          <div class="arrow">→</div>
+          <div class="score jc"><span class="sc-k">JudgeCast MSE</span><span class="sc-v" id="sc-jc">–</span></div>
+          <div class="score delta"><span class="sc-v" id="sc-delta">–</span></div>
+        </div>
+      </div>
+      <div class="legend" id="legend">
+        <span class="lg" data-k="obs"><i class="sw sw-obs"></i>Observed</span>
+        <span class="lg" data-k="base"><i class="sw sw-base"></i>TSFM base forecast</span>
+        <span class="lg" data-k="bl" id="lg-bl" hidden><i class="sw sw-bl"></i><span id="lg-bl-t">–</span></span>
+        <span class="lg" data-k="jc"><i class="sw sw-jc"></i>JudgeCast forecast</span>
+        <span class="lg" data-k="res"><i class="sw sw-res"></i>Residual of base</span>
+        <span class="lg" data-k="cand"><i class="sw sw-cand"></i>Alternative judgments (replay)</span>
+      </div>
+      <div class="chart-wrap"><svg id="chart" class="chart"></svg><div class="tip" id="tip" hidden></div></div>
+    </div>
+
+    <div class="card cov-card">
+      <div class="card-head slim">
+        <div class="card-title small">Known-future covariates</div>
+        <div class="card-sub">covariate-wise judgments are placed on the horizon steps they cover</div>
+      </div>
+      <div id="covs"></div>
+    </div>
+
+    <div class="card bank-card">
+      <div class="card-head slim">
+        <div class="card-title small"><i class="sq mem"></i>Experience memory</div>
+        <div class="card-sub"><b id="bank-n">0</b> validated experiences · <span id="bank-note">formed on earlier windows</span></div>
+      </div>
+      <div class="bank" id="bank"></div>
+    </div>
+  </section>
+
+  <section class="right card">
+    <div class="trace-head">
+      <div class="card-title small">Agent trace</div>
+      <div class="card-sub" id="trace-sub">–</div>
+    </div>
+    <div class="trace" id="trace"></div>
+  </section>
+</main>
+
+<div class="controls" id="controls">
+  <button id="btn-play" title="Play / pause (Space)">▶</button>
+  <button id="btn-restart" title="Restart (R)">↺</button>
+  <span class="sep"></span>
+  <button class="spd" data-s="0.5">0.5×</button>
+  <button class="spd on" data-s="1">1×</button>
+  <button class="spd" data-s="2">2×</button>
+  <button class="spd" data-s="4">4×</button>
+  <span class="sep"></span>
+  <span class="hint">Space play · R restart · H hide</span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
