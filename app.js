@@ -318,7 +318,7 @@ function candidateForecast(c) {
 function drawBank() {
   const b = $("#bank"); b.innerHTML = "";
   chart.cells = {};
-  for (const e of [...S.bank].reverse()) chart.cells[e.id] = el("div", { class: "cell", title: `${fmtDate(e.origin_time)} · ${e.source}` }, b);
+  for (const e of S.bank) chart.cells[e.id] = el("div", { class: "cell", title: `${fmtDate(e.origin_time)} · ${e.source}` }, b);
   $("#bank-n").textContent = S.bank.length;
 }
 // size the cells so the whole memory fits the box it is given (one extra slot for the experience this window stores)
@@ -345,17 +345,21 @@ function setView(v) {
   document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   if (v === "memory") fitBank();
 }
-// PC: outline the card the current step acts on, in the step's role colour
+// PC: outline what the current step is acting on, in the step's role colour. Adjustment moves the outline between the
+// memory (matched cases) and the chart (the correction); construction happens in the trace, so the trace is outlined.
 const FOCUS_OF = { base: [".chart-card", "base"], retrieve: [".bank-card", "memory"], judge: [".cov-card", "judgment"],
-  adjust: [".chart-card", "adjustment"], observe: [".chart-card", "feedback"], construct: [".chart-card", "feedback"],
+  adjust: [".chart-card", "adjustment"], observe: [".chart-card", "feedback"], construct: [".right", "feedback"],
   store: [".bank-card", "memory"] };
-function focusCard(name) {
-  document.querySelectorAll(".left > .card").forEach(c => c.classList.remove("focus"));
-  const f = FOCUS_OF[name]; if (!f) return;
-  const c = $(f[0]);
-  c.style.setProperty("--fc", `var(--${f[1]})`); c.style.setProperty("--fct", `var(--${f[1]}-tint2)`);
+function focusAdd(sel, role) {
+  const c = $(sel);
+  c.style.setProperty("--fc", `var(--${role})`); c.style.setProperty("--fct", `var(--${role}-tint2)`);
   c.classList.add("focus");
 }
+function focusOn(sel, role) {
+  document.querySelectorAll(".focus").forEach(c => c.classList.remove("focus"));
+  if (sel) focusAdd(sel, role);
+}
+function focusCard(name) { const f = FOCUS_OF[name]; focusOn(f && f[0], f && f[1]); }
 function stage(name) {
   if (narrow() && VIEW_OF[name]) setView(VIEW_OF[name]);
   focusCard(name);
@@ -444,6 +448,7 @@ async function run() {
     const blk = el("div", { class: "block" }, st.body);
     el("div", { class: "bh", html: `<span class="chip adj">${patternLabel(a.pattern)}</span><span class="muted">steps ${ranges(a.timestamps)}</span>` }, blk);
     if (a.cases && a.cases.length) {
+      focusOn(".bank-card", "adjustment");
       el("div", { class: "muted", style: "margin:2px 0 4px" }, blk, `${a.cases.length} matched cases from memory`);
       const cs = el("div", { class: "cases" }, blk);
       for (const c of a.cases) {
@@ -459,6 +464,7 @@ async function run() {
     el("span", { class: "delta-v" }, res, `${sgn(a.delta, 1)} ${S.dataset.unit} per step`);
     follow();
     // grow the correction on the chart
+    focusOn(".chart-card", "adjustment");
     const arrows = a.timestamps.map(s => sv("line", { x1: X(fx(s)), x2: X(fx(s)), y1: Y(jcNow[s - 1]), y2: Y(jcNow[s - 1]), stroke: "#2ca02c", "stroke-width": 2.4, "stroke-linecap": "round", opacity: 0.85 }, chart.gArrow));
     const from = a.timestamps.map(s => jcNow[s - 1]);
     await tween(900, t => {
@@ -477,10 +483,11 @@ async function run() {
   await sleep(900);
 
   // 5. observation
-  stage("observe");
+  focusOn(null);                                  // a beat with nothing outlined, so the observation reads as a new step
   const div = el("div", { class: "endline", style: "margin:4px 0 14px" }, trace(), `⏵⏵  ${HOR} hours later`);
   follow();
-  await sleep(500);
+  await sleep(700);
+  stage("observe");
   st = step("feedback", "Observation arrives", "feedback", "The realized target closes the window; the base forecast's residual r = y − ŷ_base becomes available.");
   chart.unknown.setAttribute("opacity", 0);
   shown.obs = true; $('.lg[data-k="obs"]').classList.remove("off");
@@ -507,6 +514,7 @@ async function run() {
   if (S.baselines && S.baselines.length) { $("#sc-bl").textContent = num(S.baselines[0].mse); $("#sc-bl-box").hidden = false; }
   $("#sc-delta").textContent = `${sgn(((S.mse.judgecast - S.mse.base) / S.mse.base) * 100, 1)}%`;
   $("#scoreboard").style.visibility = "visible";
+  focusAdd("#scoreboard", "feedback");
   st.done("");
   follow();
   await sleep(1400);
@@ -595,7 +603,7 @@ async function run() {
     for (const j of S.stored.judgments) judgmentChip(j, "mem", ch);
     const bank = $("#bank");
     const cell = el("div", { class: "cell new", title: `${fmtDate(S.origin_time)} · stored` });
-    bank.prepend(cell);
+    bank.append(cell);
     chart.cells[S.window] = cell;
     const nEl = $("#bank-n");
     await tween(600, t => (nEl.textContent = Math.round(S.bank.length + t)));

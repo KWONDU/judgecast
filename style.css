@@ -228,8 +228,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
 
 .views { display: none; }
 /* PC: the card the current step is acting on */
-.left > .card { transition: border-color .35s, box-shadow .35s; }
-.left > .card.focus { border-color: var(--fc); box-shadow: 0 0 0 3px var(--fct); }
+.card, .scoreboard { transition: border-color .35s, box-shadow .35s; }
+.card.focus, .scoreboard.focus { border-color: var(--fc); box-shadow: 0 0 0 3px var(--fct); }
 .sc-k { white-space: nowrap; }
 
 @media (min-width: 1000px) and (max-height: 920px) {
@@ -274,7 +274,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
   .views { display: flex; gap: 4px; background: #eceef2; border-radius: 10px; padding: 3px; }
   .views button { flex: 1; border: 0; background: transparent; font: 600 12.5px var(--sans); color: var(--ink2); padding: 6px 0; border-radius: 8px; cursor: pointer; }
   .views button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .left > .card.focus { border-color: var(--line); box-shadow: none; }
+  .card.focus, .scoreboard.focus { border-color: var(--line); box-shadow: none; }
   .left[data-view=forecast] .cov-card, .left[data-view=forecast] .bank-card,
   .left[data-view=covariates] .chart-card, .left[data-view=covariates] .bank-card,
   .left[data-view=memory] .chart-card, .left[data-view=memory] .cov-card { display: none; }
