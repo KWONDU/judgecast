@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
-<body data-scene="scene.json">
+<body data-scene="scene_{w}.json" data-default="w01969">
 <header class="top">
   <div class="brand">
     <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -20,6 +20,7 @@
       <div class="tag">Time series forecasting with experience-informed covariate judgments</div>
     </div>
   </div>
+  <div class="samples" id="samples"></div>
   <div class="top-right">
     <div class="clock"><span class="clock-label" id="clock-label">Forecast origin</span><span class="clock-time" id="clock-time">–</span></div>
     <div class="badge"><span class="b-k">Frozen TSFM</span><span class="b-v" id="m-tsfm">–</span></div>

@@ -79,7 +79,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
 
 /* main chart */
 .chart-card { position: relative; }
-.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); padding: 4px 18px 0; }
+.legend { display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); padding: 4px 18px 0; }
 .lg { display: inline-flex; align-items: center; gap: 6px; transition: opacity .4s; }
 .lg.off { opacity: .25; }
 .sw { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
@@ -231,6 +231,21 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
 .controls .hint { font-size: 11.5px; color: #9aa3b2; padding: 0 6px; }
 
 .views { display: none; }
+
+/* header switch between the recorded samples */
+.samples { display: flex; align-items: center; align-self: center; gap: 3px; background: #eef0f3; border-radius: 12px; padding: 3px; margin: 0 16px; }
+.samples button { display: flex; flex-direction: column; justify-content: center; height: auto; line-height: 1.3;
+  border: 0; background: transparent; text-align: left; padding: 5px 14px; border-radius: 9px; cursor: pointer;
+  font-family: var(--sans); color: var(--ink2); transition: background .2s, box-shadow .2s; }
+.samples button:hover { background: rgba(255,255,255,.55); }
+.samples .smp-t { display: block; font-weight: 600; font-size: 13px; line-height: 1.3; white-space: nowrap; }
+.samples .smp-d { display: block; font-size: 11px; color: var(--ink3); line-height: 1.3; white-space: nowrap; }
+.samples button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+@media (max-width: 1599px) { .brand .tag { display: none; } }
+/* where the scoreboard would wrap under the title, don't hold its space before it appears */
+@media (max-width: 1279px) { .scoreboard[style*="hidden"] { display: none; } }
+@media (max-width: 1439px) { .samples .smp-d { display: none; } }
+@media (min-width: 1000px) and (max-width: 1279px) { .badge { display: none; } }
 /* PC: the card the current step is acting on */
 .card, .scoreboard { transition: border-color .35s, box-shadow .35s; }
 .card.focus, .scoreboard.focus { border-color: var(--fc); box-shadow: 0 0 0 3px var(--fct); }
@@ -257,7 +272,10 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(-
 /* tablet portrait and phones: one column, one visualization at a time above the trace */
 @media (max-width: 999px) {
   body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-  .top { height: auto; flex: none; padding: 10px 14px; gap: 8px; }
+  .top { height: auto; flex: none; padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+  .samples { order: 3; width: 100%; margin: 0; }
+  .samples button { flex: 1; padding: 5px 8px; text-align: center; }
+  .samples .smp-t { font-size: 12px; white-space: normal; }
   .brand { gap: 9px; }
   .brand .mark { width: 28px; height: 28px; }
   .brand .name { font-size: 17px; }

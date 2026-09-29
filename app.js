@@ -300,11 +300,14 @@ function addBand(j) {
   const ci = covIndex(j.covariate); if (ci < 0) return;
   const { g } = chart.covBands[ci];
   const xa = X(fx(j.start)) - (X(1) - X(0)) / 2, xb = X(fx(j.end)) + (X(1) - X(0)) / 2;
-  const strong = j.judgment.length > 1;
+  // one hue for every judgment (blue); direction by glyph and edge (up: ▲ and a top edge, down: ▼ and a bottom edge),
+  // strength by shade and by doubling the glyph
+  const strong = j.judgment.length > 1, up = j.judgment[0] === "+";
   const b = sv("g", { opacity: 0 }, g);
   sv("rect", { x: xa + 1, y: 2, width: xb - xa - 2, height: COVH - 4, rx: 5, fill: strong ? "#c0d9ea" : "#e4eff6" }, b);
-  sv("rect", { x: xa + 1, y: 2, width: xb - xa - 2, height: 3, rx: 1.5, fill: "#1f77b4" }, b);
-  sv("text", { x: (xa + xb) / 2, y: COVH - 12, "text-anchor": "middle", "font-size": 15, "font-weight": 700, fill: "#165682" }, b, j.judgment.replace(/-/g, "−"));
+  sv("rect", { x: xa + 1, y: up ? 2 : COVH - 5, width: xb - xa - 2, height: 3, rx: 1.5, fill: "#1f77b4" }, b);
+  const glyph = (up ? "▲" : "▼").repeat(strong ? 2 : 1);
+  sv("text", { x: (xa + xb) / 2, y: up ? 20 : COVH - 11, "text-anchor": "middle", "font-size": 12, "letter-spacing": 1, fill: "#165682" }, b, glyph);
   tween(450, t => b.setAttribute("opacity", t)).catch(() => {});
 }
 
@@ -658,18 +661,44 @@ function setSpeed(s) {
   document.querySelectorAll(".spd").forEach(b => b.classList.toggle("on", +b.dataset.s === s));
 }
 
-async function init() {
-  const res = await fetch(document.body.dataset.scene || "/api/scene");
-  S = await res.json();
-  if (S.error) { document.body.textContent = S.error; return; }
+const HOR_LABEL = () => `${S.y_base.length}-step horizon`;
+
+// ---------------------------------------------------------------- samples: the header switch loads another recorded window
+async function load(w) {
+  const tpl = document.body.dataset.scene;               // static export: "scene_{w}.json"; local server: /api/scene?w=
+  const url = tpl ? tpl.replace("{w}", w || document.body.dataset.default || "") : `/api/scene${w ? "?w=" + encodeURIComponent(w) : ""}`;
+  const res = await fetch(url);
+  const next = await res.json();
+  if (next.error) { if (!S) document.body.textContent = next.error; return; }
+  gen++;                                                 // stop a run in progress before swapping the scene
+  S = next;
   document.title = `JudgeCast · ${S.dataset.dataset}`;
   $("#m-tsfm").textContent = S.models.tsfm;
-  if (S.baselines && S.baselines.length) { $("#lg-bl-t").textContent = S.baselines[0].label; $("#lg-bl").hidden = false; $("#sc-bl-box").hidden = false; $("#sc-bl-k").textContent = `${S.baselines[0].label.replace(" + covariates", " +cov")} MSE`; }
+  const bl = S.baselines && S.baselines.length;
+  $("#lg-bl").hidden = !bl; $("#sc-bl-box").hidden = !bl;
+  if (bl) { $("#lg-bl-t").textContent = S.baselines[0].label; $("#sc-bl-k").textContent = `${S.baselines[0].label.replace(" + covariates", " +cov")} MSE`; }
   $("#m-llm").textContent = `${S.models.llm}${S.models.effort ? " · " + S.models.effort : ""}`;
   $("#target-title").textContent = `${S.dataset.dataset} · ${S.dataset.label}`;
-  $("#target-sub").textContent = `${S.dataset.unit} · hourly · forecast origin ${fmtClock(parseT(S.future_times[0]))} · ${S.split === "train" ? "memory is being built" : "memory fixed"}`;
-  $("#trace-sub").textContent = `window ${S.window} · ${fmtDate(S.origin_time)}`;
+  $("#target-sub").textContent = `${S.dataset.unit} · hourly · ${HOR_LABEL()} · ${S.split === "train" ? "memory is being built" : "memory fixed"}`;
+  const d0 = parseT(S.origin_time);
+  $("#trace-sub").textContent = `${DAYS[d0.getDay()]} ${fmtDate(S.origin_time)}`;
+  const box = $("#samples"); box.innerHTML = "";
+  for (const s of S.samples || []) {
+    const b = el("button", { class: s.id === S.window ? "on" : "" }, box);
+    el("span", { class: "smp-t" }, b, s.title);
+    if (s.desc) el("span", { class: "smp-d" }, b, s.desc);
+    b.onclick = () => { if (s.id !== S.window) load(s.id); };
+  }
+  box.hidden = !(S.samples && S.samples.length > 1);
+  const q = new URLSearchParams(location.search);
+  if (w && q.get("w") !== w) { q.set("w", w); history.replaceState(null, "", `${location.pathname}?${q}`); }
   scales(); reset();
+}
+
+async function init() {
+  const q0 = new URLSearchParams(location.search);
+  await load(q0.get("w") || "");
+  if (!S) return;
 
   $("#btn-play").onclick = play;
   $("#btn-restart").onclick = reset;
