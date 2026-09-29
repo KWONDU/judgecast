@@ -345,8 +345,20 @@ function setView(v) {
   document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
   if (v === "memory") fitBank();
 }
+// PC: outline the card the current step acts on, in the step's role colour
+const FOCUS_OF = { base: [".chart-card", "base"], retrieve: [".bank-card", "memory"], judge: [".cov-card", "judgment"],
+  adjust: [".chart-card", "adjustment"], observe: [".chart-card", "feedback"], construct: [".chart-card", "feedback"],
+  store: [".bank-card", "memory"] };
+function focusCard(name) {
+  document.querySelectorAll(".left > .card").forEach(c => c.classList.remove("focus"));
+  const f = FOCUS_OF[name]; if (!f) return;
+  const c = $(f[0]);
+  c.style.setProperty("--fc", `var(--${f[1]})`); c.style.setProperty("--fct", `var(--${f[1]}-tint2)`);
+  c.classList.add("focus");
+}
 function stage(name) {
   if (narrow() && VIEW_OF[name]) setView(VIEW_OF[name]);
+  focusCard(name);
   let seen = false;
   for (const li of $("#rail").children) {
     if (li.dataset.stage === name) { li.className = "on"; seen = true; }
@@ -608,6 +620,7 @@ function reset() {
   for (const id of ["#sc-base", "#sc-bl", "#sc-jc", "#sc-delta"]) $(id).textContent = "–";
   for (const k of ["obs", "base", "bl", "jc", "res", "cand"]) $(`.lg[data-k="${k}"]`).classList.add("off");
   for (const li of $("#rail").children) li.className = "";
+  focusCard(null);
   status("", "Ready");
   clock("Forecast origin", parseT(S.future_times[0]));
   drawChart(); drawCovariates(); drawBank();
