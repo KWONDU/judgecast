@@ -475,6 +475,7 @@ async function run() {
   }
   jcNow = [...S.y_hat]; chart.jc.setAttribute("d", pathD(forecastPts(jcNow)));
   stop(); st.done();
+  focusOn(null);                                  // adjustment ends when the forecast is issued; nothing outlined until the observation
   const issued = el("div", { class: "block", style: "border-color:var(--judgment-tint2);background:var(--judgment-tint)" }, st.body);
   issued.innerHTML = `<div class="bh" style="color:var(--judgment-text)"><span>Forecast issued · ŷ = ŷ<sub>base</sub> + a</span></div><div class="muted">${HOR} steps from ${fmtClock(parseT(S.future_times[0]))}</div>`;
   follow();
@@ -482,7 +483,6 @@ async function run() {
   await sleep(900);
 
   // 5. observation
-  focusOn(null);                                  // a beat with nothing outlined, so the observation reads as a new step
   const div = el("div", { class: "endline", style: "margin:4px 0 14px" }, trace(), `⏵⏵  ${HOR} hours later`);
   follow();
   await sleep(700);
