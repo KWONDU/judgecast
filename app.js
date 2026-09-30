@@ -30,10 +30,11 @@ class Abort extends Error {}
 function frameLoop(ms, onFrame) {
   const g = gen;
   return new Promise((res, rej) => {
-    let acc = 0, last = performance.now();
+    // time comes only from the frame timestamps (so a frame-stepped recording plays at true speed)
+    let acc = 0, last = null;
     function tick(now) {
       if (g !== gen) return rej(new Abort());
-      const dt = Math.min(now - last, 100); last = now;
+      const dt = last === null ? 0 : Math.max(0, Math.min(now - last, 100)); last = now;
       if (!paused) acc += dt * speed;
       const t = ms <= 0 ? 1 : Math.min(1, acc / ms);
       if (onFrame) onFrame(t);
@@ -127,15 +128,15 @@ async function reasoning(parent, label, ms) {
   return t;
 }
 function callClock(stepObj, seconds, estMs) {
-  let alive = true, acc = 0, last = performance.now();
+  let alive = true, acc = 0, last = null;
   const g = gen;
-  (function tick(now) {
+  requestAnimationFrame(function tick(now) {
     if (!alive || g !== gen) return;
-    const dt = Math.min(now - last, 100); last = now;
+    const dt = last === null ? 0 : Math.max(0, Math.min(now - last, 100)); last = now;
     if (!paused) acc += dt * speed;
     stepObj.tm.textContent = `${Math.min(seconds * 0.97, (acc / estMs) * seconds).toFixed(1)} s`;
     requestAnimationFrame(tick);
-  })(last);
+  });
   return () => { alive = false; stepObj.tm.textContent = `${seconds.toFixed(1)} s`; };
 }
 
@@ -198,7 +199,7 @@ function drawChart() {
   const g = sv("g", {}, svg);
   const x0 = X(NCTX - 1), x1 = CW - M.r;
   // forecast horizon band + origin
-  sv("rect", { x: x0, y: M.t, width: x1 - x0, height: CH - M.t - M.b, fill: "#f5f6f9" }, g);
+  sv("rect", { id: "hzband", x: x0, y: M.t, width: x1 - x0, height: CH - M.t - M.b, fill: "#f5f6f9" }, g);
   // grid + y ticks
   for (const v of niceTicks(Y.lo, Y.hi)) {
     sv("line", { x1: M.l, x2: x1, y1: Y(v), y2: Y(v), stroke: "#eceef2" }, g);
@@ -281,7 +282,7 @@ function drawCovariates() {
     const lo = Math.min(...vals), hi = Math.max(...vals);
     const cy = v => CM.t + ((hi - v) * (COVH - CM.t - CM.b)) / (hi - lo || 1);
     const x0 = X(NCTX - 1), x1 = CW - M.r;
-    sv("rect", { x: x0, y: 0, width: x1 - x0, height: COVH, fill: "#f5f6f9" }, svg);
+    sv("rect", { class: "cov-hz", x: x0, y: 0, width: x1 - x0, height: COVH, fill: "#f5f6f9" }, svg);
     const bands = sv("g", {}, svg);
     sv("line", { x1: x0, x2: x0, y1: 0, y2: COVH, stroke: "#16181d", "stroke-width": 1.2, "stroke-dasharray": "3 3" }, svg);
     const color = ci === 0 ? "#76b7b2" : ci === 1 ? "#ff9da7" : "#9aa0aa";
@@ -365,6 +366,98 @@ function focusOn(sel, role) {
   if (sel && narrow() && VIEW_BY_SEL[sel]) setView(VIEW_BY_SEL[sel]);
 }
 function focusCard(name) { const f = FOCUS_OF[name]; focusOn(f && f[0], f && f[1]); }
+
+// ---------------------------------------------------------------- video mode (?video): what to look at, for a recording
+// A red ring moves to whatever the step is acting on; hold() freezes the run for a moment while it is shown (a recorder
+// logs body[data-hold] so an editor can play those moments at 1x); reasoning text is dimmed to background by CSS.
+const VIDEO = new URLSearchParams(location.search).has("video");
+if (VIDEO) document.documentElement.classList.add("video");
+let spotEl = null, spotTargets = null, spotPad = 6, climaxEl = null, climaxAnchor = null, glideUntil = 0;
+function rectOf(targets) {
+  const els = (Array.isArray(targets) ? targets : [targets])
+    .flatMap(t => (typeof t === "string" ? [...document.querySelectorAll(t)] : [t])).filter(Boolean);
+  if (!els.length) return null;
+  let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+  for (const e of els) { const q = e.getBoundingClientRect(); l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); }
+  return { l, t, r, b };
+}
+function placeSpot() {
+  const q = spotTargets && rectOf(spotTargets);
+  const [px, py] = Array.isArray(spotPad) ? spotPad : [spotPad, spotPad];
+  if (q) Object.assign(spotEl.style, { left: `${q.l - px}px`, top: `${q.t - py}px`, width: `${q.r - q.l + 2 * px}px`, height: `${q.b - q.t + 2 * py}px` });
+  const a = climaxEl && climaxAnchor && rectOf(climaxAnchor), panel = rectOf(".right");
+  if (a && panel) Object.assign(climaxEl.style, { right: `${innerWidth - panel.r + 26}px`, top: `${a.t - climaxEl.offsetHeight - 22}px` });
+}
+// the ring glides only while it moves to a new target (on frame time), then sits exactly on it while the trace scrolls
+function spotLoop(ts) {
+  if (spotEl) {
+    if (glideUntil === -1) glideUntil = ts + 450;
+    else if (glideUntil && ts > glideUntil) { spotEl.classList.remove("glide"); glideUntil = 0; }
+    placeSpot();
+  }
+  requestAnimationFrame(spotLoop);
+}
+function spot(targets, { pad = 6, thick = false, tag = "" } = {}) {
+  if (!VIDEO) return;
+  if (!spotEl) { spotEl = el("div", { id: "spot" }, document.body); requestAnimationFrame(spotLoop); }
+  const wasOn = spotEl.classList.contains("on");
+  spotTargets = targets; spotPad = pad;
+  spotEl.innerHTML = tag ? `<span class="tag">${tag}</span>` : "";
+  spotEl.className = `${wasOn ? "glide" : ""} ${thick ? "thick" : ""}`;
+  glideUntil = wasOn ? -1 : 0;
+  if (!wasOn) placeSpot();
+  void spotEl.offsetWidth;
+  spotEl.classList.add("on");
+  if (!wasOn) spotEl.classList.add("pop");
+}
+function unspot() { if (spotEl) spotEl.classList.remove("on", "pop", "glide"); }
+async function hold(id, ms) {
+  if (!VIDEO) return;
+  document.body.dataset.hold = id;
+  await sleep(ms);
+  delete document.body.dataset.hold;
+}
+function climax(rows, foot, anchor) {
+  if (!VIDEO) return;
+  climaxEl = el("div", { id: "climax" }, document.body);
+  climaxEl.innerHTML = rows.map(r => `<span class="k${r.win ? " win" : ""}">${r.k}</span><span class="v${r.win ? " win" : ""}">${r.v}</span><span class="d">${r.d ? `<b>${r.d}</b>` : ""}</span>`).join("")
+    + `<span class="f">${foot}</span>`;
+  climaxAnchor = anchor;
+  placeSpot();
+  void climaxEl.offsetWidth; climaxEl.classList.add("on");
+}
+function unclimax() { if (climaxEl) { const c = climaxEl; c.classList.remove("on"); setTimeout(() => c.remove(), 400); climaxEl = null; } }
+// video mode shows each result whole: text is written at once and the gaps inside one card vanish, so a card
+// (judgment + rationale, a correction with its cases, an alternative) fades in complete after a "processing" state
+const pace = ms => (VIDEO ? Promise.resolve() : sleep(ms));
+async function write(target, text, cps) {
+  if (VIDEO) { target.textContent = text; return; }
+  await stream(target, text, cps);
+}
+function adjustSpan(groups) {                      // the steps the largest correction acts on, with the lines there
+  const big = groups.reduce((a, b) => (Math.abs(b.delta) > Math.abs(a.delta) ? b : a), groups[0]);
+  const steps = groups.filter(g => Math.sign(g.delta) === Math.sign(big.delta)).flatMap(g => g.timestamps);
+  const lo = Math.min(...steps), hi = Math.max(...steps), half = (X(1) - X(0)) / 2;
+  const vals = []; for (let s = lo; s <= hi; s++) vals.push(S.y_base[s - 1], S.y_hat[s - 1]);
+  const r = sv("rect", { class: "spotbox", x: X(fx(lo)) - half, width: X(fx(hi)) - X(fx(lo)) + 2 * half,
+    y: Y(Math.max(...vals)) - 16, height: Y(Math.min(...vals)) - Y(Math.max(...vals)) + 32, fill: "none" }, $("#chart"));
+  return r;
+}
+function covSpan(g) {                              // a group's steps on the covariates its judgment pattern names
+  const lo = Math.min(...g.timestamps), hi = Math.max(...g.timestamps), half = (X(1) - X(0)) / 2;
+  return g.pattern.split("|").map(p => covIndex(p.split(":")[0])).filter(ci => ci >= 0).map(ci => {
+    const svg = chart.covBands[ci].g.ownerSVGElement;
+    return sv("rect", { class: "spotbox", x: X(fx(lo)) - half, width: X(fx(hi)) - X(fx(lo)) + 2 * half, y: 0, height: COVH, fill: "none" }, svg);
+  });
+}
+function adjChips(c, parent) {                     // a candidate's replayed adjustment: per-step correction per group
+  const gs = (c.adjusted || []).filter(a => a.pattern && Math.abs(a.delta) > 1e-9);
+  const line = el("div", { class: "keyline" }, parent);
+  el("span", { class: "kl" }, line, "Resulting adjustment");
+  if (!gs.length) el("span", { class: "chip gray" }, line, "none");
+  for (const a of gs) el("span", { class: "chip adj" }, line, `${sgn(a.delta, 1)} · steps ${ranges(a.timestamps)}`);
+  return line;
+}
 function stage(name) {
   focusCard(name);
   let seen = false;
@@ -390,6 +483,7 @@ async function run() {
   shown.base = true; $('.lg[data-k="base"]').classList.remove("off");
   tween(500, t => chart.unknown.setAttribute("opacity", 1 - t)).catch(() => {});
   await reveal(chart.clipBase, X(NCTX - 1) - 2, CW, 1100);
+  spot("#hzband"); await hold("base", 1000); unspot();
   st.done("");
   await sleep(450);
 
@@ -397,8 +491,8 @@ async function run() {
   stage("judge");
   const jText = S.rationales.map(r => r.rationale).join(" ");
   st = step("judgment", "Covariate-wise judgment", `${S.models.llm} · judge`,
-    `Input: the current window (target context, base forecast, ${cov} known-future covariate${cov > 1 ? "s" : ""}) and relevant experience from memory.`);
-  el("div", { class: "subh mem" }, st.body, `Relevant experience · k = ${S.models.k} nearest by departure distance, among ${S.bank.length} in memory`);
+    `Input: the current window (target context, base forecast, ${cov} known-future covariate${cov > 1 ? "s" : ""}) and relevant experience retrieved to inform the judgments.`);
+  el("div", { class: "subh mem" }, st.body, `Relevant experience · ${S.models.k} most similar in normalized covariates and base forecast, among ${S.bank.length} in memory`);
   follow();
   await sleep(600);
   for (const r of S.retrieved) {
@@ -413,25 +507,30 @@ async function run() {
     await sleep(380);
   }
   await sleep(500);
+  spot(".bank-card"); await hold("memc", 1300);             // where they come from, then what they say
+  spot([...st.body.querySelectorAll(".exp")]); await hold("mem", 2000); unspot();
   focusOn(".cov-card", "judgment");
   el("div", { class: "subh jud" }, st.body, "Judgment");
   const thinkMs = 1600, jCps = 120;
-  let stop = callClock(st, sec.judgment || 20, thinkMs + streamMs(jText, jCps) + 900);
+  let stop = callClock(st, sec.judgment || 20, thinkMs + (VIDEO ? 0 : streamMs(jText, jCps)) + 900);
   await reasoning(st.body, "Reasoning over covariate evidence", thinkMs);
   st.body.lastChild.textContent = "Judging each covariate on the spans it affects";
+  const jBlocks = [];
   for (const r of S.rationales) {
-    const blk = el("div", { class: "block" }, st.body);
+    const blk = el("div", { class: "block" }, st.body); jBlocks.push(blk);
     el("div", { class: "bh", html: `<code>${r.covariate}</code>` }, blk);
     const rz = el("div", { class: "rz" }, blk);
-    await stream(rz, r.rationale, jCps);
+    await write(rz, r.rationale, jCps);
     const chips = el("div", { class: "chips", style: "margin-top:7px" }, blk);
     for (const j of S.judgments.filter(j => j.covariate === r.covariate).sort((a, b) => a.start - b.start)) {
       judgmentChip(j, "", chips); addBand(j); follow();
-      await sleep(260);
+      await pace(260);
     }
-    await sleep(250);
+    await pace(250);
   }
   stop(); st.done();
+  if (VIDEO) { follow(); await sleep(500); }
+  spot(jBlocks); await hold("judg", 2400); unspot();
   markCells(S.retrieved.map(r => r.id), "hit", false);
   await sleep(500);
 
@@ -440,41 +539,76 @@ async function run() {
   const groups = S.adjusted.filter(a => a.pattern);
   const aText = groups.map(a => a.rationale).join(" ");
   st = step("adjustment", "Numerical adjustment", `${S.models.llm} · adjuster`,
-    `Steps sharing a judgment pattern form one group; each group reads matched cases from memory and sets a per-step correction in ${S.dataset.unit}.`);
-  stop = callClock(st, sec.adjustment || 20, 1200 + streamMs(aText, 125) + groups.length * 2400);
-  await reasoning(st.body, "Grouping horizon steps by judgment pattern", 1100);
+    `Steps with the same judgments across covariates share one numerical adjustment in ${S.dataset.unit}, referenced by relevant experience with matching judgments.`);
+  stop = callClock(st, sec.adjustment || 20, 1200 + (VIDEO ? 0 : streamMs(aText, 125)) + groups.length * (VIDEO ? 1600 : 2400));
+  await reasoning(st.body, "Grouping steps with the same judgments across covariates", 1100);
   jcNow = [...S.y_base];
   shown.jc = true; $('.lg[data-k="jc"]').classList.remove("off");
   chart.jc.setAttribute("d", pathD(forecastPts(jcNow))); chart.jc.setAttribute("opacity", 1);
-  for (const a of groups) {
+  // one group's card: its judgments, the relevant experience with matching judgments, the rationale and the adjustment
+  async function groupCard(a) {
     const blk = el("div", { class: "block" }, st.body);
     el("div", { class: "bh", html: `<span class="chip adj">${patternLabel(a.pattern)}</span><span class="muted">steps ${ranges(a.timestamps)}</span>` }, blk);
+    let cs = null;
     if (a.cases && a.cases.length) {
       focusOn(".bank-card", "memory");            // memory is always purple, whichever step reads it
-      el("div", { class: "muted", style: "margin:2px 0 4px" }, blk, `${a.cases.length} matched cases from memory`);
-      const cs = el("div", { class: "cases" }, blk);
+      el("div", { class: "muted", style: "margin:2px 0 4px" }, blk, `${a.cases.length} relevant experiences with matching judgments`);
+      cs = el("div", { class: "cases" }, blk);
       for (const c of a.cases) {
         el("div", { class: "case", html: `<span class="k">${fmtDate(c.origin_time)}</span><span>steps ${ranges(c.positions)}</span><span>Δ ${sgn(c.delta, 1)}</span><span>resid ${sgn(c.residual, 2)}</span>` }, cs);
         markCells([c.experience_id], "case", true); follow();
-        await sleep(220);
+        await pace(220);
       }
     }
     const rz = el("div", { class: "rz", style: "margin-top:6px" }, blk);
-    await stream(rz, a.rationale, 125);
+    await write(rz, a.rationale, 125);
     const res = el("div", { class: "result", style: "margin-top:6px" }, blk);
-    el("span", {}, res, "Correction");
+    el("span", {}, res, "Adjustment");
     el("span", { class: "delta-v" }, res, `${sgn(a.delta, 1)} ${S.dataset.unit} per step`);
     follow();
-    // grow the correction on the chart
+    return { blk, cs, res };
+  }
+  // grow corrections on the chart (several groups at once when given several)
+  async function grow(gs, ms) {
     focusOn(".chart-card", "adjustment");
-    const arrows = a.timestamps.map(s => sv("line", { x1: X(fx(s)), x2: X(fx(s)), y1: Y(jcNow[s - 1]), y2: Y(jcNow[s - 1]), stroke: "#2ca02c", "stroke-width": 2.4, "stroke-linecap": "round", opacity: 0.85 }, chart.gArrow));
-    const from = a.timestamps.map(s => jcNow[s - 1]);
-    await tween(900, t => {
-      a.timestamps.forEach((s, k) => { jcNow[s - 1] = from[k] + a.delta * t; arrows[k].setAttribute("y2", Y(jcNow[s - 1])); });
+    const parts = gs.flatMap(a => a.timestamps.map(s => ({ s, d: a.delta, from: jcNow[s - 1],
+      line: sv("line", { x1: X(fx(s)), x2: X(fx(s)), y1: Y(jcNow[s - 1]), y2: Y(jcNow[s - 1]), stroke: "#2ca02c", "stroke-width": 2.4, "stroke-linecap": "round", opacity: 0.85 }, chart.gArrow) })));
+    await tween(ms, t => {
+      for (const p of parts) { jcNow[p.s - 1] = p.from + p.d * t; p.line.setAttribute("y2", Y(jcNow[p.s - 1])); }
       chart.jc.setAttribute("d", pathD(forecastPts(jcNow)));
     });
-    markCells(a.cases ? a.cases.map(c => c.experience_id) : [], "case", false);
-    await sleep(350);
+  }
+  if (VIDEO && groups.length) {
+    // video: the group with the largest adjustment, step by step (its judgments on the covariates, the relevant experience,
+    // the correction, the forecast moving); the other groups then apply together from one summary card
+    const key = groups.reduce((a, b) => (Math.abs(b.delta) > Math.abs(a.delta) ? b : a), groups[0]);
+    const others = groups.filter(g => g !== key);
+    const { cs, res } = await groupCard(key);
+    await sleep(700);
+    spot(covSpan(key), { pad: 4 }); await hold("adjj", 1500);
+    if (cs) { spot(cs, { pad: [8, 6] }); await hold("adjc", 1700); }
+    spot(res, { pad: [10, 6] }); await hold("adjd", 1200);
+    spot(adjustSpan([key])); document.body.dataset.hold = "adjf";
+    await grow([key], 1800); await sleep(900);
+    delete document.body.dataset.hold; unspot();
+    markCells(key.cases ? key.cases.map(c => c.experience_id) : [], "case", false);
+    if (others.length) {
+      await sleep(400);
+      const blk = el("div", { class: "block" }, st.body);
+      el("div", { class: "bh", html: `<span>Other steps</span><span class="muted">one adjustment for each set of shared judgments, each with its own relevant experience</span>` }, blk);
+      const line = el("div", { class: "keyline" }, blk);
+      for (const a of others) el("span", { class: "chip adj" }, line, `${patternLabel(a.pattern)} · steps ${ranges(a.timestamps)} · ${sgn(a.delta, 1)}`);
+      follow();
+      await grow(others, 900);
+      await sleep(500);
+    }
+  } else {
+    for (const a of groups) {
+      const { cs } = await groupCard(a);
+      await grow([a], 900);
+      markCells(a.cases ? a.cases.map(c => c.experience_id) : [], "case", false);
+      await sleep(350);
+    }
   }
   jcNow = [...S.y_hat]; chart.jc.setAttribute("d", pathD(forecastPts(jcNow)));
   stop(); st.done();
@@ -506,6 +640,7 @@ async function run() {
   const bars = resid.map((r, k) => sv("line", { x1: X(fx(k + 1)), x2: X(fx(k + 1)), y1: Y(S.y_base[k]), y2: Y(S.y_base[k]), stroke: "#ff7f0e", "stroke-width": 5, "stroke-linecap": "round", opacity: 0.55 }, chart.gRes));
   $('.lg[data-k="res"]').classList.remove("off");
   await tween(700, t => bars.forEach((b, k) => b.setAttribute("y2", Y(S.y_base[k] + resid[k] * t))));
+  spot("#hzband"); await hold("obs", 1300); unspot();
   const mean = resid.reduce((a, b) => a + b, 0) / resid.length;
   let kmax = 0; resid.forEach((r, k) => { if (Math.abs(r) > Math.abs(resid[kmax])) kmax = k; });
   const kv = el("div", { class: "kv" }, st.body);
@@ -517,6 +652,7 @@ async function run() {
   $("#sc-delta").textContent = `${sgn(((S.mse.judgecast - S.mse.base) / S.mse.base) * 100, 1)}%`;
   $("#scoreboard").style.visibility = "visible";
   focusAdd("#scoreboard", "feedback");
+  spot("#scoreboard", { pad: 5 }); await hold("score", 1400); unspot();
   st.done("");
   follow();
   await sleep(1400);
@@ -534,30 +670,44 @@ async function run() {
   const fwd = con.candidates.find(c => c.origin === "forward");
   const pText = alts.map(c => c.rationales.map(r => r.rationale).join(" ")).join(" ");
   st = step("feedback", "Residual-guided experience construction", `${S.models.llm} · proposal`,
-    `Using r, reconstruct ${alts.length} alternative judgments, replay the same adjustment on each, and keep the decision whose adjusted forecast fits best.`);
-  stop = callClock(st, sec.construction || 60, 1500 + streamMs(pText, 190) + alts.length * 900 + 5000);
+    `Using the observed residual, reconstruct ${alts.length} alternative covariate-wise judgments and evaluate the original and alternatives through their resulting adjustments.`);
+  stop = callClock(st, sec.construction || 60, 1500 + (VIDEO ? 9000 : streamMs(pText, 190)) + alts.length * 900 + 5000);
   await reasoning(st.body, "Reading the residual against the original judgment", 1500);
   const candEls = {};
   const f = el("div", { class: "cand" }, st.body);
   candEls[fwd ? con.candidates.indexOf(fwd) : 0] = f;
   el("div", { class: "id" }, f, "J⁰");
   const fc = el("div", {}, f); const fch = el("div", { class: "chips" }, fc);
+  if (VIDEO) el("span", { class: "kl" }, fch, "Original judgment");
   for (const j of (fwd || con.candidates[0]).judgments) judgmentChip(j, "gray", fch);
   el("div", { class: "rz muted" }, fc, "original forward judgment");
+  if (VIDEO) adjChips(fwd || con.candidates[0], fc);
   follow();
+  spot(f); await hold("cand0", 1500);             // video: ring and pause on the original and the selected one only
   await sleep(500);
   for (const [n, c] of alts.entries()) {
+    const focal = VIDEO && c.i === con.selected;
+    if (VIDEO) {                                  // processing, then the alternative appears whole
+      unspot();
+      const ph = el("div", { class: "think" }, st.body, `Reconstructing A${n + 1}…`);
+      follow(); await sleep(focal ? 700 : 400); ph.remove();
+    }
     const box = el("div", { class: "cand" }, st.body); candEls[c.i] = box;
     el("div", { class: "id" }, box, `A${n + 1}`);
     const body = el("div", {}, box); const ch = el("div", { class: "chips" }, body);
-    for (const j of c.judgments) { judgmentChip(j, "", ch); await sleep(140); }
+    if (VIDEO) el("span", { class: "kl" }, ch, "Reconstructed judgment");
+    follow(); if (!VIDEO) spot(box);
+    for (const j of c.judgments) { judgmentChip(j, "", ch); await pace(140); }
     if (!c.judgments.length) el("span", { class: "chip gray" }, ch, "no covariate effect");
     const rz = el("div", { class: "rz" }, body);
-    await stream(rz, c.rationales.map(r => r.rationale).join(" "), 190);
-    await sleep(250);
+    await write(rz, c.rationales.map(r => r.rationale).join(" "), 190);
+    if (VIDEO) { adjChips(c, body); follow(); await sleep(focal ? 350 : 250); }
+    if (focal) { spot(box); await hold(`cand${n + 1}`, 2000); unspot(); }
+    await sleep(VIDEO && !focal ? 150 : 250);
   }
+  unspot();
   // replay losses
-  el("div", { class: "muted", style: "margin-top:4px" }, st.body, `Replay: same adjuster on each judgment · MSE against the observation`);
+  el("div", { class: "muted", style: "margin-top:4px" }, st.body, `Resulting adjustments · MSE against the observation`);
   const losses = el("div", { class: "losses" }, st.body);
   const maxL = Math.max(con.base_loss, ...con.candidates.map(c => c.loss));
   const rowOf = {};
@@ -579,6 +729,7 @@ async function run() {
     await sleep(450);
   }
   await sleep(500);
+  spot(losses, { pad: 8 }); await hold("mse", 1300);
   // selection
   const sel = con.selected;
   rowOf[sel].classList.add("win");
@@ -592,12 +743,23 @@ async function run() {
   const verdict = el("div", { class: "result", style: "margin-top:4px" }, st.body);
   verdict.innerHTML = `<span>Selected ${win.origin === "forward" ? "J⁰ (original)" : altNo[sel]}</span><span class="chip mem">MSE ${num(win.loss)} vs base ${num(con.base_loss)}</span>`;
   follow();
+  if (VIDEO) {                                    // the result of the whole construction, held long enough to read
+    const f0 = fwd || con.candidates[0];
+    const best = win.origin === "forward" ? alts.reduce((a, b) => (b.loss < a.loss ? b : a), alts[0]) : null;
+    const rows = win.origin === "forward"
+      ? [{ k: "Original J⁰", v: num(f0.loss), win: true, d: "kept" }, { k: `Best alternative ${altNo[best.i]}`, v: num(best.loss) }]
+      : [{ k: "Original J⁰", v: num(f0.loss) }, { k: `Reconstructed ${altNo[sel]}`, v: num(win.loss), win: true, d: `↓ ${Math.round((1 - win.loss / f0.loss) * 100)}%` }];
+    spot(rowOf[sel], { pad: [11, 6], thick: true, tag: "Selected" });
+    climax(rows, "MSE of each resulting adjustment against the observation", losses);
+    await hold("climax", 3400);
+    unclimax(); unspot();
+  }
   await sleep(1300);
 
   // 7. memory update
   stage("store");
   st = step("memory", "Memory update", "validated experience",
-    con.stored ? "The selected decision improves on the base forecast, so it is retained for subsequent forecasts." : "No decision improves on the base forecast; nothing is retained.");
+    con.stored ? "The selected decision improves on the base forecast, so it is retained as validated experience for subsequent forecasts." : "No decision improves on the base forecast; nothing is retained.");
   if (con.stored && S.stored) {
     const card = el("div", { class: "stored" }, st.body);
     el("div", { class: "bh", html: `<i class="sq mem"></i>${fmtDate(S.origin_time)} · ${win.origin === "forward" ? "J⁰ kept" : "J* reconstructed"} · gain ${num(con.gain)}` }, card);
@@ -610,12 +772,13 @@ async function run() {
     const nEl = $("#bank-n");
     await tween(600, t => (nEl.textContent = Math.round(S.bank.length + t)));
     $("#bank-note").textContent = "including this window";
+    spot(cell, { pad: 9 }); await hold("cell", 1600); unspot();
   }
   st.done("");
   follow();
   await sleep(700);
   tween(700, t => { chart.jc.setAttribute("opacity", 0.35 + 0.65 * t); chart.bl.forEach(l => l.setAttribute("opacity", 0.2 + 0.65 * t)); }).catch(() => {});
-  el("div", { class: "endline" }, trace(), "Stored experience is retrievable for the next forecast.");
+  el("div", { class: "endline" }, trace(), "Validated experience is available for subsequent forecasts.");
   follow();
   status("done", "Complete");
   stage("__end__");
@@ -625,6 +788,7 @@ async function run() {
 function reset() {
   gen++; seed = 7; started = false; paused = true;
   shown.base = shown.jc = shown.obs = shown.bl = false; jcNow = null;
+  unspot(); unclimax(); delete document.body.dataset.hold;
   $("#trace").innerHTML = "";
   $("#scoreboard").hidden = false; $("#scoreboard").style.visibility = "hidden";   // space held from the start: no jump when it appears
   for (const id of ["#sc-base", "#sc-bl", "#sc-jc", "#sc-delta"]) $(id).textContent = "–";
@@ -634,6 +798,7 @@ function reset() {
   status("", "Ready");
   clock("Forecast origin", parseT(S.future_times[0]));
   drawChart(); drawCovariates(); drawBank();
+  $("#bank-note").textContent = "accumulated from preceding windows";
   // two columns: if the left column would overflow, give the excess back from the chart so memory stays in view
   if (!narrow()) requestAnimationFrame(() => {
     const L = $(".left"), over = L.scrollHeight - L.clientHeight;
@@ -642,7 +807,8 @@ function reset() {
   setView("forecast");
   requestAnimationFrame(fitBank);
   const touch = window.matchMedia("(pointer: coarse)").matches;
-  const hint = el("div", { class: "endline", style: "margin-top:30%;cursor:pointer" }, trace(), touch ? "Tap ▶ to run this window" : "Press Space to run this window");
+  const recording = new URLSearchParams(location.search).has("record");
+  const hint = el("div", { class: "endline", style: "margin-top:30%;cursor:pointer" }, trace(), recording ? "" : touch ? "Tap ▶ to run this window" : "Press Space to run this window");
   hint.onclick = () => play();
   hint.id = "hint";
   $("#btn-play").textContent = "▶";
@@ -714,7 +880,8 @@ async function init() {
   window.addEventListener("resize", () => { if (!started) { scales(); reset(); } else fitBank(); });
   const q = new URLSearchParams(location.search);
   if (q.get("speed")) setSpeed(+q.get("speed"));
-  if (q.has("clean")) $("#controls").classList.add("hide");
+  if (q.has("clean") || q.has("record")) $("#controls").classList.add("hide");
+  window.__demo = { play, ready: true };           // a recorder starts the run itself, on a frame it chooses
   if (q.has("autoplay")) setTimeout(play, 1200);
 }
 init();

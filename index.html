@@ -64,8 +64,8 @@
         <span class="lg" data-k="base"><i class="sw sw-base"></i>TSFM base forecast</span>
         <span class="lg" data-k="bl" id="lg-bl" hidden><i class="sw sw-bl"></i><span id="lg-bl-t">–</span></span>
         <span class="lg" data-k="jc"><i class="sw sw-jc"></i>JudgeCast forecast</span>
-        <span class="lg" data-k="res"><i class="sw sw-res"></i>Residual of base</span>
-        <span class="lg" data-k="cand"><i class="sw sw-cand"></i>Alternative judgments (replay)</span>
+        <span class="lg" data-k="res"><i class="sw sw-res"></i>Observed residual</span>
+        <span class="lg" data-k="cand"><i class="sw sw-cand"></i>Alternative judgments</span>
       </div>
       <div class="chart-wrap"><svg id="chart" class="chart"></svg><div class="tip" id="tip" hidden></div></div>
     </div>
@@ -81,7 +81,7 @@
     <div class="card bank-card">
       <div class="card-head slim">
         <div class="card-title small"><i class="sq mem"></i>Experience memory</div>
-        <div class="card-sub"><b id="bank-n">0</b> validated experiences · <span id="bank-note">formed on earlier windows</span></div>
+        <div class="card-sub"><b id="bank-n">0</b> validated experiences · <span id="bank-note">accumulated from preceding windows</span></div>
       </div>
       <div class="bank" id="bank"></div>
     </div>
